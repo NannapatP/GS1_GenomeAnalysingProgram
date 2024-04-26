@@ -139,39 +139,6 @@ def detect_sequence_type(sequence):
             return 'Peptide'  # Likely short amino acid sequence (peptide) or non-standard protein
     else:
         return 'Unknown'  # If neither RNA, DNA, nor Protein criteria are met, classify as Unknown
-
-# Define mutation analysis function
-def plot_mutation_analysis(seq1, seq2):
-    mutation_positions = []
-    mutation_types = []
-
-    for i, (char1, char2) in enumerate(zip(seq1, seq2), start=1):
-        if char1 != char2:
-            mutation_positions.append(i)
-            mutation_types.append('Mismatch')
-        else:
-            mutation_types.append('Match')
-
-    source = ColumnDataSource(data=dict(x=mutation_positions, y=[0]*len(mutation_positions), 
-                                        mutation_types=mutation_types))
-
-    p = figure(title="Mutation Analysis", plot_width=800, plot_height=300,
-               x_range=(0, len(seq1) + 1), y_range=(-1, 1),
-               toolbar_location=None, tools="")
-
-    p.circle(x='x', y='y', size=10, source=source, color='red', legend_field='mutation_types')
-
-    p.title.text_font_size = '14pt'
-    p.xaxis.axis_label = 'Position'
-    p.yaxis.visible = False
-    p.grid.visible = False
-
-    p.legend.title = "Mutation Type"
-    p.legend.location = "top_left"
-    p.legend.label_text_font_size = "10pt"
-
-    return p
-
     
 # Define event handler for upload button
 def upload_and_display(event):
