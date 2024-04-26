@@ -18,3 +18,7 @@ Use the program's file upload functionality to select and upload the desired FAS
 Mutation Analysis:
 Specifically for mutation analysis, the program requires exactly two input files.
 Select and upload the two specific FASTA files that you want to use for mutation analysis.
+
+
+** We use file name "genomeversion2.py" as lasted file**
+If you want to see our journey please look at "genomev1.py"
