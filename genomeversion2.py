@@ -1,15 +1,16 @@
-import io
-import panel as pn
 from Bio import SeqIO
-from Bio.Align.Applications import MuscleCommandline
-from bokeh.models import ColumnDataSource, Rect, Text, TapTool, CustomJS
-from bokeh.models import HoverTool
-from bokeh.layouts import gridplot
-from bokeh.plotting import figure, show
+import io
 import subprocess
+import panel as pn
+from bokeh.models import ColumnDataSource, Rect, Text
+from bokeh.layouts import gridplot
+from bokeh.plotting import figure, show, ColumnDataSource
 import numpy as np
-import tkinter as tk
 from sklearn.linear_model import LinearRegression
+
+# Define valid nucleotide and amino acid characters
+nucleotide_bases = {'A', 'C', 'G', 'T', 'U'}  # Include 'U' for RNA sequences
+amino_acids = {'A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y'}
 
 # Define functions for sequence alignment and visualization
 def muscle_alignment(seqs):
@@ -24,12 +25,13 @@ def muscle_alignment(seqs):
 
 def get_colors(sequence):
     # Define a color mapping for nucleotide characters
-    color_map = {'A': 'red', 'T': 'green', 'G': 'orange', 'C': 'blue', '-': 'white'}
+    color_map = {'A': 'red', 'T': 'green', 'G': 'orange', 'C': 'blue', 'U': 'purple', '-': 'white'}
     
     # Map each character in the sequence to its corresponding color
     colors = [color_map[char] for char in sequence]
     
     return colors
+
 def view_alignment(aln, fontsize="9pt", plot_width=2000, max_positions=2000):
     seqs = [rec.seq for rec in aln]
     ids = [rec.id for rec in aln]
@@ -102,11 +104,7 @@ def detect_sequence_type(sequence):
     # Convert the sequence to uppercase for case-insensitive comparisons
     sequence = sequence.upper()
 
-    # Define valid nucleotide and amino acid characters
-    nucleotide_bases = {'A', 'C', 'G', 'T', 'U'}
-    amino_acids = {'A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y'}
-
-    # Count occurrences of each nucleotide and amino acid
+    # Count occurrences of nucleotides and amino acids
     count_nucleotides = sum(1 for base in sequence if base in nucleotide_bases)
     count_amino_acids = sum(1 for aa in sequence if aa in amino_acids)
 
@@ -123,15 +121,15 @@ def detect_sequence_type(sequence):
 
     # Determine sequence type based on composition
     if nucleotide_percentage > 0.50:  # If >50% of characters are nucleotides
-        if 'U' in sequence:
+        if 'U' in sequence:  # Check for 'U' to identify RNA sequences
             return 'RNA'  # Likely RNA sequence
         else:
             return 'DNA'  # Likely DNA sequence
     elif amino_acid_percentage > 0.90:  # If >90% of characters are amino acids
         # Perform additional checks for protein-like characteristics
-        has_start_codon = sequence.startswith('ATG')
-        has_stop_codon = any(sequence.endswith(stop) for stop in ['TAA', 'TAG', 'TGA'])
-        contains_valid_amino_acids = all(aa in amino_acids for aa in sequence)
+        has_start_codon = sequence.startswith('ATG')  # Protein-like start codon
+        has_stop_codon = any(sequence.endswith(stop) for stop in ['TAA', 'TAG', 'TGA'])  # Protein-like stop codons
+        contains_valid_amino_acids = all(aa in amino_acids for aa in sequence)  # Check for valid amino acids
 
         if has_start_codon and has_stop_codon and contains_valid_amino_acids:
             return 'Protein'  # Likely protein sequence with start and stop codons
@@ -139,7 +137,8 @@ def detect_sequence_type(sequence):
             return 'Peptide'  # Likely short amino acid sequence (peptide) or non-standard protein
     else:
         return 'Unknown'  # If neither RNA, DNA, nor Protein criteria are met, classify as Unknown
-    
+
+
 # Define event handler for upload button
 def upload_and_display(event):
     try:
@@ -148,6 +147,8 @@ def upload_and_display(event):
 
         for file_contents in file_input.value:
             file_text = file_contents.decode("utf-8")
+            print("Uploaded Sequence Content:")
+            print(file_text)  # Print uploaded sequence content for debugging
             sequences = list(SeqIO.parse(io.StringIO(file_text), "fasta"))
             all_sequences.extend(sequences)
             ids.extend([rec.id for rec in sequences])
@@ -172,6 +173,8 @@ def upload_and_display(event):
 
     except Exception as e:
         seq_pane.object = f"Error loading sequences: {str(e)}"
+
+
 
 def compare_sequences_callback(event):
     if len(file_input.value) < 2:
@@ -214,6 +217,22 @@ def compare_sequences_helper(seq1, seq2):
 
     return differences, same_positions, similarity_percentage
 
+def detect_mutation_type(seq1, seq2):
+    mutation_positions = []
+    mutation_types = []
+
+    for i, (char1, char2) in enumerate(zip(seq1, seq2), start=1):
+        if char1 != char2:
+            mutation_positions.append(i)
+            if len(seq1) == len(seq2):
+                mutation_types.append('Substitution')
+            elif len(seq1) > len(seq2):
+                mutation_types.append('Deletion')
+            else:
+                mutation_types.append('Insertion')
+
+    return mutation_positions, mutation_types
+
 def plot_mutation_analysis(seq1, seq2):
     mutation_positions = []
     mutation_types = []
@@ -221,45 +240,56 @@ def plot_mutation_analysis(seq1, seq2):
     for i, (char1, char2) in enumerate(zip(seq1, seq2), start=1):
         if char1 != char2:
             mutation_positions.append(i)
-            mutation_types.append('Mismatch')
+            if len(seq1) == len(seq2):
+                mutation_types.append('Substitution')
+            elif len(seq1) > len(seq2):
+                mutation_types.append('Deletion')
+            else:
+                mutation_types.append('Insertion')
 
+    # Create Bokeh plot for mutation analysis
     source = ColumnDataSource(data=dict(x=mutation_positions, y=[0]*len(mutation_positions), 
                                         mutation_types=mutation_types))
 
     p = figure(title="Mutation Analysis", width=800, height=600,
-               x_axis_label='Amino Acid Substitutions per Site',
-               y_axis_label='Disease Mutations per Replacement Site',
+               x_axis_label='Position', y_axis_label='Mutation Type',
                toolbar_location=None, tools="")
 
-    # Calculate observed values (for demonstration only)
+    # Define smaller marker size for mutation positions
+    marker_size = 6
+
+    # Plot mutation positions using scatter for different mutation types
+    mutation_colors = {'Substitution': 'blue', 'Insertion': 'green', 'Deletion': 'orange'}
+    for mutation_type in set(mutation_types):
+        mutation_indices = [i for i, mtype in enumerate(mutation_types) if mtype == mutation_type]
+        p.scatter(x='x', y='y', size=marker_size, color=mutation_colors[mutation_type], legend_label=mutation_type,
+                  source=source, alpha=0.6, selection_color='red', selection_alpha=1.0,
+                  nonselection_alpha=0.2, selection_line_color='black', selection_line_width=2,
+                  nonselection_line_alpha=0.2, nonselection_line_width=1)
+
+    # Additional plot elements (for demonstration)
     observed_x = [0.5, 1.2, 2.0, 3.1, 4.5]
     observed_y = [2, 3, 4, 5, 6]
 
-    # Plot observed data points using scatter() instead of circle()
     p.scatter(x=observed_x, y=observed_y, size=8, color='navy', alpha=0.6, legend_label='Observed Data')
 
-    # Plot expected regression lines
     model = LinearRegression()
     model.fit(np.array(observed_x).reshape(-1, 1), observed_y)
     regression_line = model.predict(np.array(observed_x).reshape(-1, 1))
 
     p.line(observed_x, regression_line, line_width=2, color='red', legend_label='Regression Line')
 
-    # Plot expected lines (uniform and evolutionarily-influenced distributions)
     uniform_expected = np.linspace(min(observed_x), max(observed_x), 100)
     evolution_expected = 2 * uniform_expected
 
     p.line(uniform_expected, uniform_expected, line_dash='dashed', line_width=2, color='green', legend_label='Uniform Expected')
     p.line(uniform_expected, evolution_expected, line_dash='dotted', line_width=2, color='orange', legend_label='Evolution Expected')
 
-
     p.title.text_font_size = '14pt'
     p.legend.location = "top_left"
     p.legend.label_text_font_size = "10pt"
 
     return p
-
-
 # Define event handler for mutation button
 def perform_mutation_analysis(event):
     if len(file_input.value) < 2:
@@ -277,6 +307,13 @@ def perform_mutation_analysis(event):
     except Exception as e:
         # Handle errors by displaying an error message
         mutation_pane.object = f"Error performing mutation analysis: {str(e)}"
+
+# Define a color map for mutation types
+mutation_color_map = {
+    'Substitution': 'red',
+    'Insertion': 'blue',
+    'Deletion': 'green'
+}
 
 # Define Panel app components
 file_input = pn.widgets.FileInput(accept=".fasta", multiple=True)
@@ -309,3 +346,4 @@ app = pn.Tabs(
 
 # Display the app
 app.show()
+
